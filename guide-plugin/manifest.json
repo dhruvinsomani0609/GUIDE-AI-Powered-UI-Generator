@@ -1,0 +1,9 @@
+{
+    "name": "GUIDE Local Generator",
+    "id": "guide-local-generator",
+    "api": "1.0.0",
+    "main": "code.js",
+    "editorType": [
+        "figma"
+    ]
+}
