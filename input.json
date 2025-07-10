@@ -1,0 +1,14 @@
+{
+    "model": "codellama:instruct",
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a frontend UI expert. Given a natural language prompt, generate valid HTML5 with embedded CSS. Output must begin with <!DOCTYPE html> and end with </html>. Embed CSS in <style>. No markdown."
+        },
+        {
+            "role": "user",
+            "content": "Design a login page that has email, password and login button"
+        }
+    ],
+    "stream": false
+}

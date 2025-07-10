@@ -67,6 +67,8 @@ source venv/bin/activate # macOS/Linux
 # Install dependencies
 pip install -r requirements.txt
 
+pip install fastapi uvicorn httpx pydantic
+
 # Start FastAPI server
 uvicorn app:app --reload --port 8000
 ```

@@ -1,13 +1,16 @@
+from deep_translator import GoogleTranslator
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 import traceback
+from langdetect import detect 
+from googletrans import Translator 
 
 app = FastAPI()
 
-# Enable all CORS
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,25 +20,37 @@ app.add_middleware(
 )
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL_NAME = "llama3:latest"
+MODEL_NAME = "codellama:instruct"  # Use best for HTML
 
-# Prompt to generate clean HTML
+# SYSTEM PROMPT
 HTML_SYSTEM_PROMPT = """
-You are a frontend UI expert. Given a natural language prompt, return only the HTML and embedded CSS required to render a clean GUI.
+You are an expert frontend UI developer.
 
-Strict rules:
-- Return only valid HTML with embedded <style> in the <head>.
-- NO explanations, descriptions, markdown, comments, or triple backticks.
-- Do not describe what the code does.
-- Just return pure HTML (no markdown formatting).
+Given a natural language prompt, generate valid HTML5 with embedded CSS.
 
-Your output must always start with <!DOCTYPE html> and end with </html>.
+Rules:
+- Output must begin with <!DOCTYPE html> and end with </html>
+- Embed <style> CSS in the <head>
+- NO markdown, explanations, triple backticks, or descriptions
+- Only raw HTML is allowed
 """
 
 class Prompt(BaseModel):
     text: str
 
-# Core call to Ollama
+# Initialize translator
+translator = Translator()
+
+# 🔁 Translate if not English
+def translate_to_english(text: str) -> str:
+    detected = translator.detect(text)
+    if detected.lang != 'en':
+        print(f"🌐 Detected language: {detected.lang}, translating to English...")
+        translated = translator.translate(text, dest='en')
+        return translated.text
+    return text
+
+# Call Ollama LLM
 async def call_ollama(system_prompt: str, user_prompt: str):
     payload = {
         "model": MODEL_NAME,
@@ -51,51 +66,53 @@ async def call_ollama(system_prompt: str, user_prompt: str):
             response = await client.post(OLLAMA_URL, json=payload)
             response.raise_for_status()
             content = response.json()["message"]["content"]
-            print("🧠 Raw Ollama Response:\n", content[:500])
+            print("🔁 Raw Ollama Response:\n", content[:500])
             return content
         except httpx.HTTPStatusError as e:
+            print("❌ HTTP error:", e)
             raise Exception(f"Ollama returned HTTP {e.response.status_code}")
         except Exception as e:
+            print("❌ Unexpected error in call_ollama:", str(e))
             raise e
 
+
+# Preview Endpoint
 @app.post("/preview", response_class=HTMLResponse)
 async def preview_ui(p: Prompt):
     try:
-        print(f"🧪 Preview prompt: {p.text}")
-        html = await call_ollama(HTML_SYSTEM_PROMPT, p.text)
+        print(f"🧪 Original Prompt: {p.text}")
 
-        # 🧽 Remove surrounding markdown if present
+        # Step 1: Detect language
+        detected_lang = detect(p.text)
+        print(f"🌐 Detected language: {detected_lang}")
+
+        # Step 2: Translate only if not English
+        if detected_lang != "en":
+            translated = GoogleTranslator(source='auto', target='en').translate(p.text)
+            print(f"🔤 Translated Prompt: {translated}")
+        else:
+            translated = p.text
+            print("🔤 No translation needed (English detected).")
+
+        # Step 3: Send to LLM
+        html = await call_ollama(HTML_SYSTEM_PROMPT, translated)
+
+        # Step 4: Strip any extra formatting
         html = html.strip().strip("`")
-        if html.startswith("```html"):
-            html = html[7:]
-        elif html.startswith("```"):
-            html = html[3:]
-        if html.endswith("```"):
-            html = html[:-3]
-
-        # Remove any explanation text before the first <html> or <button>
         if "<!DOCTYPE html" in html:
             html = html[html.index("<!DOCTYPE html"):]
-        elif "<button" in html:
-            html = html[html.index("<button"):]
+        else:
+            raise Exception("LLM response missing HTML")
 
         return HTMLResponse(content=html, status_code=200)
 
     except Exception as e:
-        return HTMLResponse(content=f"<h1>Error:</h1><pre>{str(e)}</pre>", status_code=500)
-
+        print("❌ Error:", str(e))
+        return HTMLResponse(
+            content=f"<h1>Backend Error</h1><pre>{traceback.format_exc()}</pre>",
+            status_code=500
+        )
 
 @app.get("/health")
 async def health():
-    try:
-        _ = await call_ollama(HTML_SYSTEM_PROMPT, "Simple login form")
-        return {"status": "ok", "ollama_status": "connected", "model": MODEL_NAME}
-    except Exception as e:
-        return {"status": "error", "ollama_status": "failed", "error": str(e)}
-
-@app.get("/")
-def root():
-    return {
-        "message": "LLM-powered UI generation server is running",
-        "endpoints": ["/generate", "/preview", "/health"]
-    }
+    return {"status": "ok"}

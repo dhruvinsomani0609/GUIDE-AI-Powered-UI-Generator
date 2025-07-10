@@ -1,0 +1,3 @@
+Design a pricing page with three subscription cards: Basic, Pro, and Enterprise.
+Include title, price, feature list, and signup button for each.
+Use clean layout and soft gradients.
